@@ -6,7 +6,7 @@ A personally developed framework, **ReplMon**, that measures SQL Server transact
 
 **Live sample reports (every section expanded):** [Operations report](https://lachungo.github.io/sql-server-self-healing-replication/operations-report.html) · [Resilience report](https://lachungo.github.io/sql-server-self-healing-replication/resilience-report.html)
 
-**Article:** [How I Built Self-Healing Transactional Replication for SQL Server](ARTICLE_LINK)
+**Article:** [How I Built Self-Healing Transactional Replication for SQL Server](https://www.linkedin.com/pulse/how-i-built-self-healing-transactional-replication-sql-louis-achungo-c45xe/)
 
 ---
 
