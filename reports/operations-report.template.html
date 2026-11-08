@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replication Operations Report</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/*__BASE_CSS__*/
+  @media (max-width: 560px) { th:nth-child(5), td:nth-child(5) { display: none; } }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="head">
+    <div><h1>Replication Operations Report</h1><div class="muted">ReplMon · transactional replication health, incidents and repairs</div></div>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="section">
+    <h2>1. Executive Summary</h2>
+    <div id="verdict"></div>
+    <div class="tiles" id="kpis"></div>
+  </section>
+
+  <section class="section">
+    <h2>2. Latency Against the SLO</h2>
+    <p>Tracer tokens posted every minute under continuous OLTP load, per subscriber. Dashed line: the latency SLO.</p>
+    <div class="tiles" id="tiles"></div>
+    <div class="chart"><canvas id="trend" aria-label="Latency over time per subscriber"></canvas></div>
+  </section>
+
+  <section class="section">
+    <h2>3. Where the Time Goes</h2>
+    <p>Median per hop. Publisher&nbsp;&rarr;&nbsp;distributor is the Log Reader; distributor&nbsp;&rarr;&nbsp;subscriber is the Distribution Agent and the network.</p>
+    <div class="chart short"><canvas id="split" aria-label="Latency split by hop"></canvas></div>
+  </section>
+
+  <section class="section">
+    <h2>4. Incidents</h2>
+    <p id="incSummary"></p>
+    <details id="incDetails">
+      <summary id="incToggle">Show incidents</summary>
+      <div class="scroll">
+      <table>
+        <thead><tr><th>#</th><th>Kind</th><th>Subscriber</th><th>Detected</th><th>Diagnosis</th><th>Action</th><th>Resolved</th></tr></thead>
+        <tbody id="incidents"></tbody>
+      </table>
+      </div>
+    </details>
+    <div class="note" id="chaosNote"></div>
+  </section>
+
+  <section class="section">
+    <h2>5. Rows Repaired</h2>
+    <p>Counted by type, table and subscriber. Every repaired row is in the CSV beside this report; the most recent are shown in full with the values before and after.</p>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Type</th><th>Table</th><th>Subscriber</th><th class="num">Rows</th><th>First (UTC)</th><th>Last (UTC)</th></tr></thead>
+      <tbody id="repSummary"></tbody>
+    </table>
+    </div>
+    <div class="note" id="csvNote"></div>
+    <details id="repDetails">
+      <summary id="repToggle">Show repaired rows</summary>
+      <div id="repairs"></div>
+    </details>
+  </section>
+
+  <section class="section">
+    <h2>6. DBA Guardrail</h2>
+    <div class="guard"><b>Every repair above was row-level and driven by the publisher.</b> Before closing the incident:
+      <ul>
+        <li>Find who changed subscriber data outside replication. Subscribers here are read-only; a missing, stray or changed row has a cause.</li>
+        <li>Never clear these errors with <code>-SkipErrors</code>: the agent goes green and the subscriber stays wrong.</li>
+        <li>Broad damage (many rows, an expired subscription) calls for reinitializing the affected articles, not repeated repairs.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="muted" id="foot"></footer>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+const SLO_MS = DATA.sloMs;
+/*__COMMON_JS__*/
+
+const tiers = [...new Set(DATA.subs.map(s => s.tier))];
+const tierText = tiers.includes('cloud') ? 'on-prem containers + Azure SQL Managed Instance' : 'on-prem containers';
+document.getElementById('meta').innerHTML = renderMeta([
+  ['Window (UTC)', `${esc(DATA.window.fromUtc)}<br>${esc(DATA.window.toUtc)}`],
+  ['Window (local)', `${esc(DATA.window.fromLocal)}<br>${esc(DATA.window.toLocal)}`],
+  ['Topology', `1 publisher/distributor<br>${DATA.subs.length} push subscribers (${esc(tierText)})`],
+  ['Generated', esc(DATA.built)],
+]);
+
+// ---- verdict + key numbers
+const tokens = DATA.subs.reduce((a, x) => a + x.tokens, 0);
+const within = DATA.subs.reduce((a, x) => a + (x.withinSlo ?? 0), 0);
+const compliance = tokens ? within / tokens : null;
+const open = DATA.incidents.filter(i => !i.resolved);
+const worst = DATA.subs.reduce((m, x) => x.p95 > (m?.p95 ?? -1) ? x : m, null);
+const longest = DATA.incidents.reduce((m, i) => Math.max(m, i.openSec ?? 0), 0);
+const kindsOf = [...new Set(DATA.repairSummary.map(r => r.type.split(':')[0].toLowerCase()))];
+let level, title, text;
+if (open.length) {
+  level = 'bad'; title = 'Action needed';
+  text = `${open.length} incident(s) still open: ${[...new Set(open.map(i => `${i.kind} on ${i.sub}`))].join(', ')}.`;
+} else if (DATA.incidents.length || (compliance != null && compliance < 1)) {
+  level = 'warn'; title = 'Recovered';
+  text = `${DATA.incidents.length} incident(s), all resolved automatically` +
+         (DATA.repairTotal ? `; ${DATA.repairTotal.toLocaleString()} row(s) repaired (${kindsOf.join(', ')})` : '') +
+         `. Replication was within the ${SLO_MS / 1000} s SLO ${pct(compliance)} of the time.`;
+} else {
+  level = 'good'; title = 'Healthy';
+  text = `No incidents. Replication was within the ${SLO_MS / 1000} s SLO ${pct(compliance)} of the time.`;
+}
+document.getElementById('verdict').innerHTML = banner(level, title, text);
+document.getElementById('kpis').innerHTML = [
+  ['Within SLO', pct(compliance), `${within.toLocaleString()} of ${tokens.toLocaleString()} tracer tokens under ${SLO_MS / 1000} s`],
+  ['Incidents', `${DATA.incidents.length}`, open.length ? `${open.length} still open` : (DATA.incidents.length ? `all resolved · longest ${longest.toFixed(0)} s` : 'none')],
+  ['Rows repaired', DATA.repairTotal.toLocaleString(), DATA.repairSummary.length ? `${DATA.repairSummary.length} type/table group(s)` : 'none'],
+  ['Worst p95 latency', worst ? fmt(worst.p95) : '—', worst ? `${worst.name}` : ''],
+].map(([who, big, meta]) => `<div class="tile"><div class="who">${esc(who)}</div><div class="big">${esc(big)}</div><div class="meta">${esc(meta)}</div></div>`).join('');
+
+// ---- incidents: one line, table on demand
+const byKind = DATA.incidents.reduce((m, i) => (m[i.kind] = (m[i.kind] || 0) + 1, m), {});
+document.getElementById('incSummary').textContent = DATA.incidents.length
+  ? `${DATA.incidents.length} incident(s): ${Object.entries(byKind).map(([k, n]) => `${n} ${k}`).join(', ')}. ` +
+    (open.length ? `${open.length} still open.` : `All resolved; the longest was open ${longest.toFixed(1)} s.`)
+  : 'No real incidents in this window.';
+document.getElementById('incToggle').textContent = `Show ${DATA.incidents.length} incident(s)`;
+document.getElementById('incDetails').style.display = DATA.incidents.length ? '' : 'none';
+document.getElementById('incidents').innerHTML = renderIncidentRows(DATA.incidents, 'No real incidents in this window.');
+document.getElementById('chaosNote').textContent = DATA.chaosExcluded
+  ? `${DATA.chaosExcluded} incident(s) in this window were caused by chaos tests and are excluded here; see the resilience report.` : '';
+
+// ---- repairs: counts first, evidence on demand
+const typeCls = t => t.startsWith('Missing') ? 'missing-row' : t.startsWith('Duplicate') ? 'dup' : 'drift';
+document.getElementById('repSummary').innerHTML = DATA.repairSummary.length ? DATA.repairSummary.map(r => `
+  <tr><td><span class="kind ${typeCls(r.type)}">${esc(r.type)}</span></td><td>${esc(r.table)}</td><td>${esc(r.sub)}</td>
+  <td class="num">${Number(r.rows).toLocaleString()}</td><td>${esc(String(r.first).slice(5))}</td><td>${esc(String(r.last).slice(5))}</td></tr>`).join('')
+  : '<tr><td colspan="6" class="empty">No rows were repaired in this window.</td></tr>';
+document.getElementById('csvNote').textContent = DATA.repairTotal ? `All ${DATA.repairTotal.toLocaleString()} repaired row(s), with values before and after: output\\${DATA.csvName}` : '';
+document.getElementById('repToggle').textContent = DATA.repairTotal > DATA.repairs.length
+  ? `Show the ${DATA.repairs.length} most recent of ${DATA.repairTotal.toLocaleString()} repaired rows`
+  : `Show ${DATA.repairs.length} repaired row(s) in full`;
+document.getElementById('repDetails').style.display = DATA.repairs.length ? '' : 'none';
+document.getElementById('repairs').innerHTML = renderRepairs(DATA.repairs, false);
+
+document.getElementById('tiles').innerHTML = DATA.subs.map((s, i) => `
+  <div class="tile">
+    <div class="who"><span class="swatch" style="background:var(${slot(i)})"></span>${s.name} &middot; ${s.tier}</div>
+    <div class="big">${fmt(s.p95)}</div>
+    <div class="meta">p95 end-to-end &middot; max ${fmt(s.max)} &middot; ${s.tokens} tokens</div>
+  </div>`).join('');
+
+document.getElementById('foot').textContent = `Source: ReplMon.dbo.TracerLatency, Incident and RepairLog. Real incidents only; chaos-test incidents are reported in the resilience report.`;
+applyExpand();
+
+let charts = [];
+function draw() {
+  charts.forEach(c => c.destroy()); charts = [];
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.color = css('--text-secondary');
+  const grid = { color: css('--grid') }, border = { display: false };
+  const tooltip = { backgroundColor: css('--card'), titleColor: css('--text-primary'), bodyColor: css('--text-primary'),
+                    borderColor: css('--border'), borderWidth: 1, padding: 10, boxPadding: 4 };
+
+  const labels = DATA.minutes.map(m => m.slice(11));
+  const lines = DATA.subs.map((s, i) => ({
+    label: s.name, data: DATA.minutes.map(m => s.points[m] ?? null),
+    borderColor: css(slot(i)), backgroundColor: css(slot(i)),
+    // spanGaps false: minutes with no token are an outage, so show them as a gap, not a line
+    borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.25, spanGaps: false }));
+  lines.push({ label: 'SLO', data: labels.map(() => SLO_MS), borderColor: css('--slo'), borderDash: [6, 5],
+               borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 0 });
+  charts.push(new Chart(document.getElementById('trend'), {
+    type: 'line', data: { labels, datasets: lines },
+    options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'top', align: 'start', labels: { usePointStyle: true, boxWidth: 8 } },
+                 tooltip: { ...tooltip, filter: it => it.dataset.label !== 'SLO',
+                            callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.parsed.y)}` } } },
+      scales: { x: { grid: { display: false }, border, ticks: { maxTicksLimit: 8 }, title: { display: true, text: 'UTC' } },
+                y: { beginAtZero: true, grid, border, ticks: { callback: v => fmt(v) } } } } }));
+
+  charts.push(new Chart(document.getElementById('split'), {
+    type: 'bar',
+    data: { labels: DATA.subs.map(s => s.name), datasets: [
+      { label: 'Publisher → distributor', data: DATA.subs.map(s => s.distP50), backgroundColor: css('--series-1'),
+        borderRadius: 4, borderSkipped: 'start', barPercentage: 0.7, categoryPercentage: 0.6 },
+      { label: 'Distributor → subscriber', data: DATA.subs.map(s => s.subP50), backgroundColor: css('--series-2'),
+        borderRadius: 4, borderSkipped: 'start', barPercentage: 0.7, categoryPercentage: 0.6 } ] },
+    options: { indexAxis: 'y', maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', align: 'start', labels: { usePointStyle: true, boxWidth: 8 } },
+                 tooltip: { ...tooltip, callbacks: { label: c => ` ${c.dataset.label}: ${fmt(c.parsed.x)}` } } },
+      scales: { x: { beginAtZero: true, grid, border, ticks: { callback: v => fmt(v) } },
+                y: { grid: { display: false }, border } } } }));
+}
+draw();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+</script>
+</body>
+</html>

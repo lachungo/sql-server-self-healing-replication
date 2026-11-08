@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replication Resilience Report</title>
+<style>
+/* report-base.css: shared look for the ReplMon reports, matched to the RCA Toolkit report style */
+  :root {
+    --page-bg: #eef3f8; --surface: #f8fbff; --card: #ffffff; --border: #dce4ed; --rule: #d8e2ee;
+    --text-primary: #18243a; --text-secondary: #4a5a72; --text-muted: #667489; --grid: #e6edf5;
+    --navy: #092a62; --navy-2: #083b80; --navy-3: #0a3470; --th-bg: #edf4fb; --th-ink: #123c74;
+    --series-1: #1f63c6; --series-2: #e98a00; --series-3: #2e9b55;
+    --good: #1d7a34; --slo: #8a97ab; --critical: #c71820;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page-bg); color: var(--text-primary); font: 14px/1.5 "Segoe UI", Arial, sans-serif; }
+  .page { max-width: 1180px; margin: 20px auto; background: var(--card); padding: 28px 34px; box-shadow: 0 2px 15px #7893aa55; }
+  .head { display: flex; justify-content: space-between; gap: 25px; border-bottom: 1px solid #ccd7e4; padding-bottom: 15px; }
+  .head h1 { margin: 0; color: var(--navy); font-size: 26px; }
+  .head .meta { display: grid; grid-template-columns: repeat(2, minmax(170px, 1fr)); gap: 8px; font-size: 12px; }
+  .head .meta b { display: block; color: var(--navy); }
+  .muted { color: var(--text-muted); font-size: 12px; }
+  .section { margin-top: 22px; }
+  .section h2 { color: var(--navy-2); font-size: 18px; border-bottom: 1px solid var(--rule); padding-bottom: 7px; margin: 0 0 10px; }
+  .section > p { color: var(--text-secondary); margin: 0 0 12px; font-size: 13px; }
+
+  /* executive summary hero, like the RCA "hero" box */
+  .verdict { border: 1px solid; border-radius: 7px; padding: 18px; margin-bottom: 14px; }
+  .verdict.good { border-color: #3a9b4a; background: #f2fbf1; }
+  .verdict.warn { border-color: #e99b00; background: #fff8e8; }
+  .verdict.bad  { border-color: #e54747; background: #fff5f5; }
+  .verdict .vt { font-size: 18px; font-weight: 700; margin: 8px 0 4px; }
+  .verdict.good .vt { color: var(--good); } .verdict.warn .vt { color: #9a5a00; } .verdict.bad .vt { color: var(--critical); }
+  .verdict .vx { color: var(--text-primary); }
+
+  /* fact tiles, like the RCA "facts" grid */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 12px 0; }
+  .tile { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; text-align: center; background: var(--card); }
+  .tile .who { color: var(--text-secondary); font-size: 12px; display: flex; justify-content: center; align-items: center; gap: 6px; }
+  .tile .big { display: block; color: var(--navy-3); font-size: 24px; font-weight: 700; margin: 2px 0; font-variant-numeric: tabular-nums; }
+  .tile .meta { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+  .chart { position: relative; height: 320px; }
+  .chart.short { height: 200px; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th { background: var(--th-bg); color: var(--th-ink); text-align: left; font-weight: 600; }
+  th, td { padding: 7px; border: 1px solid var(--border); vertical-align: top; }
+  td.num, th.num { text-align: right; }
+  .ok { color: var(--good); font-weight: 600; }
+  .open { color: var(--critical); font-weight: 600; }
+  .empty { color: var(--text-muted); font-size: 13px; }
+  .note { background: #eef6ff; border: 1px solid #c9ddf4; padding: 10px 11px; border-radius: 5px; font-size: 13px; margin-top: 10px; }
+  .note:empty { display: none; }
+  .guard { background: #edf8ec; border: 1px solid #b8ddb5; padding: 13px; border-radius: 6px; }
+  .guard ul { margin: 6px 0 0 18px; padding: 0; }
+  footer { margin-top: 18px; }
+
+  /* filled pills, like the RCA PRIMARY / CONTRIBUTING pills */
+  .kind { display: inline-block; padding: 3px 9px; border-radius: 12px; color: #fff; font-weight: 700; font-size: 11px;
+          background: #5b6b82; white-space: nowrap; }
+  .kind.missing-row, .kind.fail, .kind.bad { background: #d71920; }
+  .kind.dup, .kind.slow, .kind.warn { background: #e99b00; }
+  .kind.drift { background: #1f63c6; }
+  .kind.pass, .kind.good { background: #2e8b3e; }
+  .summary { margin-bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* repair evidence, like the RCA "transaction" blocks */
+  .repair { border: 1px solid #d8e2ed; border-radius: 7px; padding: 16px; margin: 12px 0; background: var(--card); }
+  .repair h3 { font-size: 15px; margin: 0 0 6px; color: var(--navy); }
+  .repair h3 .kind { margin-right: 6px; vertical-align: 1px; }
+  .repair .say { font-size: 14px; margin: 4px 0 8px; }
+  .repair .meta { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
+  .repair .err { font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; }
+  code, .cmd { font-family: Consolas, ui-monospace, monospace; font-size: 12.5px; }
+  .cmd { white-space: pre-wrap; word-break: break-word; background: #fff9e8; border: 1px solid #ead9a2; padding: 10px 11px;
+         border-radius: 5px; margin-bottom: 10px; }
+  .rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .rowbox { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: var(--surface); }
+  .rowbox h4 { margin: 0 0 6px; font-size: 11px; color: var(--th-ink); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .rowbox table td { padding: 3px 4px; border: 0; font-size: 12.5px; }
+  .rowbox table td:first-child { color: var(--text-muted); white-space: nowrap; }
+  .missing { color: var(--critical); font-weight: 700; font-size: 13px; }
+  .changed { font-weight: 700; color: var(--critical); }
+  .say { font-size: 14px; margin: 4px 0 8px; }
+
+  /* collapsible detail */
+  details > summary { cursor: pointer; color: var(--series-1); font-weight: 600; font-size: 13px; margin: 10px 0; }
+  details[open] > summary { margin-bottom: 12px; }
+  .more { color: var(--series-1); font-size: 12px; font-weight: 600; }
+
+  /* resilience runs */
+  .run { border: 1px solid #d8e2ed; border-radius: 7px; padding: 14px 16px; margin: 10px 0; }
+  .run > summary { color: var(--text-primary); font-weight: 400; list-style: none; margin: 0; }
+  .run > summary::-webkit-details-marker { display: none; }
+  .run h3 { font-size: 15px; margin: 0 0 4px; color: var(--navy); }
+  .timeline { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--text-secondary); margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
+  .timeline b { color: var(--text-primary); font-weight: 600; }
+  .phase { display: flex; height: 14px; border-radius: 4px; overflow: hidden; background: var(--grid); margin: 8px 0 4px; }
+  .phase span { height: 100%; }
+  .ph-wait { background: var(--series-1); } .ph-fix { background: var(--series-2); } .ph-catch { background: var(--series-3); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+  @media (max-width: 850px) {
+    .page { margin: 0; padding: 20px 16px; box-shadow: none; }
+    .head { display: block; } .head .meta { margin-top: 12px; }
+  }
+  @media print { body { background: #fff; } .page { box-shadow: none; margin: 0; } }
+
+  td.res { white-space: nowrap; }
+  .vs { color: var(--text-muted); font-size: 12px; }
+  .bar { position: relative; height: 8px; background: var(--grid); border-radius: 4px; margin-top: 4px; min-width: 90px; }
+  .bar span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--series-1); }
+  .bar span.over { background: var(--critical); }
+  .bar i { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text-primary); }
+  @media (max-width: 560px) { th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) { display: none; } }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="head">
+    <div><h1>Replication Resilience Test Report</h1><div class="muted">ReplMon · faults injected on purpose, scored against targets</div></div>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="section">
+    <h2>1. Executive Summary</h2>
+    <div id="verdict"></div>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <section class="section">
+    <h2>2. Results Against Targets</h2>
+    <p>ReplMon's scheduled jobs did the detecting and repairing, with no human in the loop. Bars show the time taken; the black tick is the target. Times from injection.</p>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Run</th><th>Fault</th><th>Subscriber</th><th>Injected (UTC)</th><th>Time to detect</th><th>Time to recover</th><th>vs previous run</th><th>Result</th></tr></thead>
+      <tbody id="results"></tbody>
+    </table>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>3. Where the Time Went, Run by Run</h2>
+    <p>One bar per run, all on the same scale, from injection to verified recovery. Under each: what was broken, the incident ReplMon raised, and the rows it repaired.</p>
+    <div class="legend"><span><i class="ph-wait"></i>Waiting for detection</span><span><i class="ph-fix"></i>Detected → repaired</span><span><i class="ph-catch"></i>Repaired → verified recovery</span></div>
+    <div id="runs"></div>
+  </section>
+
+  <section class="section">
+    <h2>4. Test Guardrail</h2>
+    <div class="guard"><b>Chaos tests run in non-production, or in an agreed game-day window.</b>
+      <ul>
+        <li>Targets live in <code>ReplMon.dbo.ChaosTarget</code>; change them to match your SLOs, not to make a run pass.</li>
+        <li>A failed run stays recorded as Fail, so a regression is visible on the next report.</li>
+        <li>Rerun the full set after every cumulative update, schema change or new subscriber, and compare with the previous run.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="muted" id="foot"></footer>
+</main>
+<script>
+const DATA = {"window":{"fromLocal":"2026-11-08 03:00","toLocal":"2026-11-08 04:23","fromUtc":"2026-11-08 08:00","toUtc":"2026-11-08 09:23"},"runs":[{"id":6,"scenario":"AgentStopped","sub":"sqlsub2","injected":"2026-11-08 08:13:39.440","detectSec":22.8,"repairSec":22.8,"recoverSec":55.6,"prevDetect":20.1,"prevRecover":61.5,"detectTarget":60,"recoverTarget":120,"description":"Distribution Agent job stopped. Expect: detect, restart the job, backlog drains.","notes":"Stopped job sqlpub-SalesDemo-pub_SalesDemo-SQLSUB2-2 | Agent restarted; backlog drained (token arrived)","result":"Passed"},{"id":7,"scenario":"RowNotFound","sub":"sqlsub1","injected":"2026-11-08 08:15:05.280","detectSec":85.7,"repairSec":90.9,"recoverSec":124.5,"prevDetect":79.0,"prevRecover":111.9,"detectTarget":120,"recoverTarget":180,"description":"Row deleted at the subscriber, then updated at the publisher (20598). Expect: restore the row, restart the agent.","notes":"Deleted Customer 103 at the subscriber, then updated it at the publisher | Customer 103 restored; agent resumed","result":"Passed"},{"id":8,"scenario":"DuplicateKey","sub":"sqlsub1","injected":"2026-11-08 08:17:39.950","detectSec":82.2,"repairSec":87.4,"recoverSec":115.2,"prevDetect":null,"prevRecover":null,"detectTarget":120,"recoverTarget":180,"description":"Stray subscriber row holds a unique value a new publisher row needs (2627). Expect: publisher judges it stray, delete it, restart the agent.","notes":"Stray ProductID 975733 at the subscriber vs new ProductID 202 on SKU-CHAOS-79719 | Stray 975733 removed; ProductID 202 replicated","result":"Passed"},{"id":10,"scenario":"SilentDrift","sub":"sqlsub2","injected":"2026-11-08 08:31:12.873","detectSec":43.4,"repairSec":43.6,"recoverSec":69.5,"prevDetect":28.7,"prevRecover":31.4,"detectTarget":60,"recoverTarget":90,"description":"Row changed directly at the subscriber; no error is ever raised. Drift check triggered on demand. Expect: find and resync that row.","notes":"Set SalesOrder 18160 Status to TAMPERED at the subscriber | SalesOrder 18160 restored","result":"Passed"}],"incidents":[{"id":13,"kind":"AgentStopped","sub":"sqlsub2","detected":"2026-11-08 08:14:02.197","diagnosis":"Distribution agent job is not running.","action":"Started sqlpub-SalesDemo-pub_SalesDemo-SQLSUB2-2","actionAt":"2026-11-08 08:14:02.220","resolved":"2026-11-08 08:14:30.843","openSec":28.646000,"runId":6},{"id":14,"kind":"LatencyBreach","sub":"sqlsub1","detected":"2026-11-08 08:16:02.087","diagnosis":"SLO 30s breached: oldest pending token 52s, last measured 7387 ms.","action":null,"actionAt":null,"resolved":"2026-11-08 08:17:01.650","openSec":59.563000,"runId":7},{"id":15,"kind":"DataConflict","sub":"sqlsub1","detected":"2026-11-08 08:16:31.007","diagnosis":"Distribution agent failing with error 20598: The row was not found at the Subscriber when applying the replicated UPDATE command for Table '[dbo].[Customer]' with Primary Key(s): [CustomerID] = 103","action":"Restored [dbo].[Customer] key (103) from the publisher; restarted sqlpub-SalesDemo-pub_SalesDemo-SQLSUB1-1","actionAt":"2026-11-08 08:16:36.203","resolved":"2026-11-08 08:17:01.643","openSec":30.636000,"runId":7},{"id":16,"kind":"DataConflict","sub":"sqlsub1","detected":"2026-11-08 08:19:02.183","diagnosis":"Distribution agent failing with error 2627: Violation of UNIQUE KEY constraint 'UQ_Product_Sku'. Cannot insert duplicate key in object 'dbo.Product'. The duplicate key value is (SKU-CHAOS-79719).","action":"Cleared UQ_Product_Sku conflict on [dbo].[Product] value (SKU-CHAOS-79719): removed 1 stray row(s), resynced 0 stale row(s) from the publisher; restarted sqlpub-SalesDemo-pub_SalesDemo-SQLSUB1-1","actionAt":"2026-11-08 08:19:07.340","resolved":"2026-11-08 08:19:30.830","openSec":28.647000,"runId":8},{"id":18,"kind":"SilentDrift","sub":"sqlsub2","detected":"2026-11-08 08:31:56.300","diagnosis":"1 row(s) differ with no replication error in [dbo].[SalesOrder].","action":"Repaired 1 drifted row(s) in [dbo].[SalesOrder] key by key (1 written)","actionAt":"2026-11-08 08:31:56.467","resolved":"2026-11-08 08:32:20.367","openSec":24.067000,"runId":10}],"repairs":[{"id":3,"incident":15,"at":"2026-11-08 08:16:31.173","sub":"sqlsub1","table":"[dbo].[Customer]","key":"103","mode":"sync","errCode":"20598","errText":"The row was not found at the Subscriber when applying the replicated UPDATE command for Table '[dbo].[Customer]' with Primary Key(s): [CustomerID] = 103","command":"{CALL [sp_MSupd_dboCustomer] (,,N'chaos-4C53B142@example.com',,N'2026-11-08 08:15:05.277',103,0x14)}","before":null,"pub":"{\"CustomerID\":103,\"Name\":\"Customer 103\",\"Email\":\"chaos-4C53B142@example.com\",\"Region\":\"AZ\",\"ModifiedAt\":\"2026-11-08T08:15:05.277\"}","after":"{\"CustomerID\":103,\"Name\":\"Customer 103\",\"Email\":\"chaos-4C53B142@example.com\",\"Region\":\"AZ\",\"ModifiedAt\":\"2026-11-08T08:15:05.277\"}","runId":7},{"id":4,"incident":16,"at":"2026-11-08 08:19:02.307","sub":"sqlsub1","table":"[dbo].[Product]","key":"975733","mode":"delete","errCode":"2627","errText":"Violation of UNIQUE KEY constraint 'UQ_Product_Sku'. Cannot insert duplicate key in object 'dbo.Product'. The duplicate key value is (SKU-CHAOS-79719).","command":"{CALL [sp_MSins_dboProduct] (202,'SKU-CHAOS-79719',N'Chaos product (real)',9.99)}","before":"{\"ProductID\":975733,\"Sku\":\"SKU-CHAOS-79719\",\"Name\":\"Chaos stray (subscriber only)\",\"ListPrice\":1.00}","pub":null,"after":null,"runId":8},{"id":6,"incident":18,"at":"2026-11-08 08:31:56.460","sub":"sqlsub2","table":"[dbo].[SalesOrder]","key":"18160","mode":"sync","errCode":null,"errText":"Silent drift: subscriber row differed with no replication error","command":null,"before":"{\"OrderID\":18160,\"CustomerID\":1921,\"OrderDate\":\"2026-05-27T14:02:58.975\",\"Status\":\"TAMPERED\",\"Total\":264.00}","pub":"{\"OrderID\":18160,\"CustomerID\":1921,\"OrderDate\":\"2026-05-27T14:02:58.975\",\"Status\":\"NEW\",\"Total\":264.00}","after":"{\"OrderID\":18160,\"CustomerID\":1921,\"OrderDate\":\"2026-05-27T14:02:58.975\",\"Status\":\"NEW\",\"Total\":264.00}","runId":10}],"expand":true,"built":"2026-11-08 04:23"};
+/* report-common.js: shared by the operations and resilience reports (inlined at build time) */
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + ' s' : Math.round(ms) + ' ms';
+const slot = i => `--series-${i + 1}`;
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const t = v => v ? esc(String(v).slice(5, 19)) : '';   // MM-DD HH:MM:SS
+
+const parse = j => { try { return j ? JSON.parse(j) : null; } catch { return null; } };
+function rowBox(title, row, compareTo, emptyText = 'Row missing') {
+  if (!row) return `<div class="rowbox"><h4>${title}</h4><div class="missing">${emptyText}</div></div>`;
+  const cells = Object.entries(row).map(([k, v]) => {
+    const diff = compareTo && JSON.stringify(compareTo[k]) !== JSON.stringify(v);
+    return `<tr><td>${esc(k)}</td><td class="${diff ? 'changed' : ''}">${esc(v)}</td></tr>`;
+  }).join('');
+  return `<div class="rowbox"><h4>${title}</h4><table>${cells}</table></div>`;
+}
+// Plain-English classification of each repair: what kind of problem it was, and what was done
+function classify(r) {
+  const txt = r.errText || '';
+  const val = (txt.match(/duplicate key value is \((.*)\)/) || [])[1];
+  const uq = (txt.match(/UNIQUE KEY constraint '([^']+)'/) || txt.match(/unique index '([^']+)'/) || [])[1];
+  if (r.errCode === '20598')
+    return { type: 'Missing row', cls: 'missing-row',
+      say: `The subscriber did not have this row, so a replicated UPDATE could not be applied (error 20598). ReplMon restored the row from the publisher and the agent re-applied the UPDATE.` };
+  if ((r.errCode === '2627' || r.errCode === '2601') && uq)
+    return r.mode === 'delete'
+      ? { type: 'Duplicate key: stray row', cls: 'dup',
+          say: `A new row could not be applied because row ${r.key} on the subscriber already held ${uq} value ${val ?? ''} (error ${r.errCode}). Row ${r.key} does not exist on the publisher, so it was a stray: ReplMon removed it and the agent applied the new row.` }
+      : { type: 'Duplicate key: stale row', cls: 'dup',
+          say: `Row ${r.key} on the subscriber held an out-of-date ${uq} value ${val ?? ''} that blocked a new value (error ${r.errCode}). ReplMon resynced it from the publisher and the agent re-applied the change.` };
+  if (r.errCode === '2627' || r.errCode === '2601')
+    return { type: 'Duplicate key: primary key', cls: 'dup',
+      say: `A replicated INSERT found key ${r.key} already on the subscriber (error ${r.errCode}). ReplMon removed the stale copy so the agent could insert the publisher's version.` };
+  return r.mode === 'delete'
+    ? { type: 'Silent drift: extra row', cls: 'drift',
+        say: `Row ${r.key} existed only on the subscriber and no replication error had reported it. The drift check found it and removed it.` }
+    : { type: 'Silent drift: changed row', cls: 'drift',
+        say: `Row ${r.key} differed from the publisher with no replication error. The drift check found it and resynced it from the publisher.` };
+}
+function renderRepairs(repairs, showSummary = true) {
+  const kinds = repairs.map(classify);
+const counts = kinds.reduce((m, k) => (m[k.type] = (m[k.type] || 0) + 1, m), {});
+  return repairs.length
+  ? (showSummary ? `<div class="summary">${Object.entries(counts).map(([k, n]) => `<span class="kind">${esc(k)} · ${n}</span>`).join(' ')}</div>` : '') +
+    repairs.map((r, idx) => {
+  const c = kinds[idx];
+  const before = parse(r.before), pub = parse(r.pub), after = parse(r.after);
+  const removed = r.mode === 'delete';
+  const verdict = removed
+    ? (pub ? 'stale copy removed; the agent re-applies the publisher\'s row' : '<span class="ok">&#10003; stray row removed; it never existed on the publisher</span>')
+    : (after && pub && JSON.stringify(after) === JSON.stringify(pub)
+        ? '<span class="ok">&#10003; subscriber now matches the publisher</span>'
+        : '<span class="open">check: after differs from publisher</span>');
+  return `<div class="repair">
+    <h3><span class="kind ${c.cls}">${esc(c.type)}</span> ${esc(r.table)} row ${esc(r.key)} on ${esc(r.sub)}</h3>
+    <div class="say">${esc(c.say)}</div>
+    <div class="meta">Repair #${r.id}${r.incident ? ` for incident #${r.incident}` : ''} at ${t(r.at)} UTC · ${verdict}</div>
+    ${r.errText ? `<div class="err">${r.errCode ? `<b>Error ${esc(r.errCode)}:</b> ` : ''}${esc(r.errText)}</div>` : ''}
+    ${r.command ? `<div class="cmd">${esc(r.command)}</div>` : ''}
+    <div class="rows">
+      ${rowBox('Subscriber before', before, pub, 'Row missing')}
+      ${rowBox(removed ? 'Publisher' : 'Publisher (restored from)', pub, null, 'Not on the publisher')}
+      ${rowBox('Subscriber after', after, pub, removed ? 'Row removed' : 'Row missing')}
+    </div></div>`;
+}).join('') : '<div class="empty">No rows were repaired.</div>';
+}
+
+
+function renderIncidentRows(incidents, emptyText) {
+  return incidents.length ? incidents.map(i => `
+  <tr><td>${i.id}</td><td><span class="kind">${esc(i.kind)}</span></td><td>${esc(i.sub)}</td>
+  <td>${t(i.detected)}</td><td>${esc(i.diagnosis)}</td><td>${esc(i.action ?? '')}</td>
+  <td>${i.resolved ? `${t(i.resolved)}<br><span class="empty">open ${Number(i.openSec).toFixed(1)} s</span>`
+                   : '<span class="open">still open</span>'}</td></tr>`).join('')
+  : `<tr><td colspan="7" class="empty">${esc(emptyText)}</td></tr>`;
+}
+
+// Executive-summary hero, in the RCA report style: severity pill, headline, one sentence
+function banner(level, title, text) {
+  const pill = { good: 'NO ACTION NEEDED', warn: 'AUTO-RESOLVED', bad: 'ACTION NEEDED' }[level] || '';
+  return `<div class="verdict ${level}"><span class="kind ${level}">${pill}</span><div class="vt">${esc(title)}</div><div class="vx">${esc(text)}</div></div>`;
+}
+// Header metadata block
+function renderMeta(pairs) {
+  return pairs.map(([k, v]) => `<div><b>${esc(k)}</b>${v}</div>`).join('');
+}
+// Details are open unless the report was built with -Collapsed
+function applyExpand() {
+  if (DATA.expand === false) return;
+  document.querySelectorAll('details').forEach(d => d.open = true);
+}
+const pct = v => v == null ? '—' : `${(Math.floor(v * 1000) / 10).toFixed(1)}%`;
+
+
+const sec = v => v == null ? '—' : `${Number(v).toFixed(1)} s`;
+const median = a => { const s = a.filter(v => v != null).sort((x, y) => x - y); if (!s.length) return null;
+  const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+
+function score(r) {
+  if (r.result === 'Failed')  return { label: 'Fail', cls: 'fail' };
+  if (r.result === 'Running') return { label: 'Running', cls: '' };
+  const late = (r.detectTarget != null && r.detectSec > r.detectTarget) || (r.recoverTarget != null && r.recoverSec > r.recoverTarget);
+  return late ? { label: 'Pass, over target', cls: 'slow' } : { label: 'Pass', cls: 'pass' };
+}
+function bar(v, target) {
+  if (v == null) return '';
+  const max = Math.max(v, target ?? 0) * 1.1 || 1;
+  return `<div class="bar"><span class="${target != null && v > target ? 'over' : ''}" style="width:${(v / max * 100).toFixed(1)}%"></span>` +
+         (target != null ? `<i style="left:${(target / max * 100).toFixed(1)}%"></i>` : '') + '</div>';
+}
+function delta(now, prev) {
+  if (now == null || prev == null) return '';
+  const d = now - prev;
+  return `${d > 0 ? '+' : ''}${d.toFixed(1)} s`;
+}
+
+document.getElementById('meta').innerHTML = renderMeta([
+  ['Window (UTC)', `${esc(DATA.window.fromUtc)}<br>${esc(DATA.window.toUtc)}`],
+  ['Window (local)', `${esc(DATA.window.fromLocal)}<br>${esc(DATA.window.toLocal)}`],
+  ['Runs in window', String(DATA.runs.length)],
+  ['Generated', esc(DATA.built)],
+]);
+
+const scored = DATA.runs.map(r => ({ ...r, s: score(r) }));
+const passed = scored.filter(r => r.s.cls === 'pass').length;
+const failed = scored.filter(r => r.s.cls === 'fail').length;
+const over = scored.filter(r => r.s.cls === 'slow');
+document.getElementById('verdict').innerHTML = !scored.length ? '' :
+  failed ? banner('bad', `Failed: ${failed} of ${scored.length} runs`,
+                  `Not recovered: ${scored.filter(r => r.s.cls === 'fail').map(r => `${r.scenario} on ${r.sub}`).join(', ')}. Open those runs below.`)
+  : over.length ? banner('warn', `Recovered, ${over.length} over target`,
+                  `All ${scored.length} faults were repaired automatically; ${over.map(r => `${r.scenario} on ${r.sub}`).join(', ')} took longer than its target.`)
+  : banner('good', `Passed: ${scored.length} of ${scored.length} within target`,
+           `Every fault was detected, repaired and verified automatically, inside its target. Median detection ${sec(median(scored.map(r => r.detectSec)))}, median recovery ${sec(median(scored.map(r => r.recoverSec)))}.`);
+document.getElementById('tiles').innerHTML = [
+  ['Runs', String(scored.length), `${failed} failed`],
+  ['Within target', `${passed} / ${scored.length}`, 'detect and recover both within target'],
+  ['Median time to detect', sec(median(scored.map(r => r.detectSec))), 'MTTD, from injection'],
+  ['Median time to recover', sec(median(scored.map(r => r.recoverSec))), 'MTTR, verified recovery'],
+].map(([who, big, meta]) => `<div class="tile"><div class="who">${esc(who)}</div><div class="big">${esc(big)}</div><div class="meta">${esc(meta)}</div></div>`).join('');
+
+document.getElementById('results').innerHTML = scored.length ? scored.map(r => `
+  <tr><td>${r.id}</td><td>${esc(r.scenario)}</td><td>${esc(r.sub)}</td><td>${t(r.injected)}</td>
+  <td>${sec(r.detectSec)} <span class="vs">/ ${sec(r.detectTarget)}</span>${bar(r.detectSec, r.detectTarget)}</td>
+  <td>${sec(r.recoverSec)} <span class="vs">/ ${sec(r.recoverTarget)}</span>${bar(r.recoverSec, r.recoverTarget)}</td>
+  <td class="vs">${delta(r.detectSec, r.prevDetect) ? `detect ${delta(r.detectSec, r.prevDetect)}<br>recover ${delta(r.recoverSec, r.prevRecover)}` : 'first run'}</td>
+  <td class="res"><span class="kind ${r.s.cls}">${esc(r.s.label)}</span></td></tr>`).join('')
+  : '<tr><td colspan="8" class="empty">No chaos runs in this window. Run ./chaos/Invoke-ChaosTest.ps1 -Scenario All -TriggerDriftNow</td></tr>';
+
+const scale = Math.max(1, ...scored.map(r => r.recoverSec ?? r.detectTarget ?? 0));
+function phases(r) {
+  if (r.recoverSec == null) return `<div class="phase" title="Not recovered"><span style="width:100%;background:var(--critical);opacity:.35"></span></div>`;
+  const d = r.detectSec ?? 0, f = Math.max((r.repairSec ?? d) - d, 0), c = Math.max(r.recoverSec - (r.repairSec ?? d), 0);
+  const w = v => `${(v / scale * 100).toFixed(2)}%`;
+  return `<div class="phase" title="detect ${sec(d)} · repair ${sec(f)} · recover ${sec(c)}">` +
+         `<span class="ph-wait" style="width:${w(d)}"></span><span class="ph-fix" style="width:${w(f)}"></span><span class="ph-catch" style="width:${w(c)}"></span></div>`;
+}
+document.getElementById('runs').innerHTML = scored.length ? scored.map(r => {
+  const inc = DATA.incidents.filter(i => i.runId === r.id);
+  const rep = DATA.repairs.filter(x => x.runId === r.id);
+  const step = (label, v) => v == null ? '' : `<span>${label} <b>+${Number(v).toFixed(1)} s</b></span>`;
+  return `<details class="run"><summary>
+      <h3>Run #${r.id} · ${esc(r.scenario)} on ${esc(r.sub)} <span class="kind ${r.s.cls}">${esc(r.s.label)}</span>
+        <span class="vs">· recovered in ${sec(r.recoverSec)}</span> <span class="more">details</span></h3>
+      ${phases(r)}
+    </summary>
+    <div class="say">${esc(r.description ?? '')}</div>
+    <div class="timeline"><span>Injected <b>${t(r.injected)} UTC</b></span>${step('Detected', r.detectSec)}${step('Repaired', r.repairSec)}${step('Recovered', r.recoverSec)}</div>
+    <div class="err">${esc(r.notes ?? '')}</div>
+    ${inc.length ? `<div class="scroll"><table>
+      <thead><tr><th>#</th><th>Kind</th><th>Subscriber</th><th>Detected</th><th>Diagnosis</th><th>Action</th><th>Resolved</th></tr></thead>
+      <tbody>${renderIncidentRows(inc, '')}</tbody></table></div>` : '<div class="empty">No incident linked to this run.</div>'}
+    ${rep.length ? `<div style="margin-top:12px">${renderRepairs(rep, false)}</div>` : ''}
+  </details>`;
+}).join('') : '<div class="empty">Nothing to show.</div>';
+
+document.getElementById('foot').textContent = 'Source: ReplMon.dbo.ChaosRun, ChaosTarget, Incident and RepairLog. Report lineage is confined to the runs injected in this window.';
+applyExpand();
+</script>
+</body>
+</html>
+

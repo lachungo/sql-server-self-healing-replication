@@ -1,0 +1,104 @@
+/* report-base.css: shared look for the ReplMon reports, matched to the RCA Toolkit report style */
+  :root {
+    --page-bg: #eef3f8; --surface: #f8fbff; --card: #ffffff; --border: #dce4ed; --rule: #d8e2ee;
+    --text-primary: #18243a; --text-secondary: #4a5a72; --text-muted: #667489; --grid: #e6edf5;
+    --navy: #092a62; --navy-2: #083b80; --navy-3: #0a3470; --th-bg: #edf4fb; --th-ink: #123c74;
+    --series-1: #1f63c6; --series-2: #e98a00; --series-3: #2e9b55;
+    --good: #1d7a34; --slo: #8a97ab; --critical: #c71820;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page-bg); color: var(--text-primary); font: 14px/1.5 "Segoe UI", Arial, sans-serif; }
+  .page { max-width: 1180px; margin: 20px auto; background: var(--card); padding: 28px 34px; box-shadow: 0 2px 15px #7893aa55; }
+  .head { display: flex; justify-content: space-between; gap: 25px; border-bottom: 1px solid #ccd7e4; padding-bottom: 15px; }
+  .head h1 { margin: 0; color: var(--navy); font-size: 26px; }
+  .head .meta { display: grid; grid-template-columns: repeat(2, minmax(170px, 1fr)); gap: 8px; font-size: 12px; }
+  .head .meta b { display: block; color: var(--navy); }
+  .muted { color: var(--text-muted); font-size: 12px; }
+  .section { margin-top: 22px; }
+  .section h2 { color: var(--navy-2); font-size: 18px; border-bottom: 1px solid var(--rule); padding-bottom: 7px; margin: 0 0 10px; }
+  .section > p { color: var(--text-secondary); margin: 0 0 12px; font-size: 13px; }
+
+  /* executive summary hero, like the RCA "hero" box */
+  .verdict { border: 1px solid; border-radius: 7px; padding: 18px; margin-bottom: 14px; }
+  .verdict.good { border-color: #3a9b4a; background: #f2fbf1; }
+  .verdict.warn { border-color: #e99b00; background: #fff8e8; }
+  .verdict.bad  { border-color: #e54747; background: #fff5f5; }
+  .verdict .vt { font-size: 18px; font-weight: 700; margin: 8px 0 4px; }
+  .verdict.good .vt { color: var(--good); } .verdict.warn .vt { color: #9a5a00; } .verdict.bad .vt { color: var(--critical); }
+  .verdict .vx { color: var(--text-primary); }
+
+  /* fact tiles, like the RCA "facts" grid */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 12px 0; }
+  .tile { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; text-align: center; background: var(--card); }
+  .tile .who { color: var(--text-secondary); font-size: 12px; display: flex; justify-content: center; align-items: center; gap: 6px; }
+  .tile .big { display: block; color: var(--navy-3); font-size: 24px; font-weight: 700; margin: 2px 0; font-variant-numeric: tabular-nums; }
+  .tile .meta { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+  .chart { position: relative; height: 320px; }
+  .chart.short { height: 200px; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th { background: var(--th-bg); color: var(--th-ink); text-align: left; font-weight: 600; }
+  th, td { padding: 7px; border: 1px solid var(--border); vertical-align: top; }
+  td.num, th.num { text-align: right; }
+  .ok { color: var(--good); font-weight: 600; }
+  .open { color: var(--critical); font-weight: 600; }
+  .empty { color: var(--text-muted); font-size: 13px; }
+  .note { background: #eef6ff; border: 1px solid #c9ddf4; padding: 10px 11px; border-radius: 5px; font-size: 13px; margin-top: 10px; }
+  .note:empty { display: none; }
+  .guard { background: #edf8ec; border: 1px solid #b8ddb5; padding: 13px; border-radius: 6px; }
+  .guard ul { margin: 6px 0 0 18px; padding: 0; }
+  footer { margin-top: 18px; }
+
+  /* filled pills, like the RCA PRIMARY / CONTRIBUTING pills */
+  .kind { display: inline-block; padding: 3px 9px; border-radius: 12px; color: #fff; font-weight: 700; font-size: 11px;
+          background: #5b6b82; white-space: nowrap; }
+  .kind.missing-row, .kind.fail, .kind.bad { background: #d71920; }
+  .kind.dup, .kind.slow, .kind.warn { background: #e99b00; }
+  .kind.drift { background: #1f63c6; }
+  .kind.pass, .kind.good { background: #2e8b3e; }
+  .summary { margin-bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* repair evidence, like the RCA "transaction" blocks */
+  .repair { border: 1px solid #d8e2ed; border-radius: 7px; padding: 16px; margin: 12px 0; background: var(--card); }
+  .repair h3 { font-size: 15px; margin: 0 0 6px; color: var(--navy); }
+  .repair h3 .kind { margin-right: 6px; vertical-align: 1px; }
+  .repair .say { font-size: 14px; margin: 4px 0 8px; }
+  .repair .meta { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
+  .repair .err { font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; }
+  code, .cmd { font-family: Consolas, ui-monospace, monospace; font-size: 12.5px; }
+  .cmd { white-space: pre-wrap; word-break: break-word; background: #fff9e8; border: 1px solid #ead9a2; padding: 10px 11px;
+         border-radius: 5px; margin-bottom: 10px; }
+  .rows { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .rowbox { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: var(--surface); }
+  .rowbox h4 { margin: 0 0 6px; font-size: 11px; color: var(--th-ink); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .rowbox table td { padding: 3px 4px; border: 0; font-size: 12.5px; }
+  .rowbox table td:first-child { color: var(--text-muted); white-space: nowrap; }
+  .missing { color: var(--critical); font-weight: 700; font-size: 13px; }
+  .changed { font-weight: 700; color: var(--critical); }
+  .say { font-size: 14px; margin: 4px 0 8px; }
+
+  /* collapsible detail */
+  details > summary { cursor: pointer; color: var(--series-1); font-weight: 600; font-size: 13px; margin: 10px 0; }
+  details[open] > summary { margin-bottom: 12px; }
+  .more { color: var(--series-1); font-size: 12px; font-weight: 600; }
+
+  /* resilience runs */
+  .run { border: 1px solid #d8e2ed; border-radius: 7px; padding: 14px 16px; margin: 10px 0; }
+  .run > summary { color: var(--text-primary); font-weight: 400; list-style: none; margin: 0; }
+  .run > summary::-webkit-details-marker { display: none; }
+  .run h3 { font-size: 15px; margin: 0 0 4px; color: var(--navy); }
+  .timeline { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--text-secondary); margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
+  .timeline b { color: var(--text-primary); font-weight: 600; }
+  .phase { display: flex; height: 14px; border-radius: 4px; overflow: hidden; background: var(--grid); margin: 8px 0 4px; }
+  .phase span { height: 100%; }
+  .ph-wait { background: var(--series-1); } .ph-fix { background: var(--series-2); } .ph-catch { background: var(--series-3); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+  @media (max-width: 850px) {
+    .page { margin: 0; padding: 20px 16px; box-shadow: none; }
+    .head { display: block; } .head .meta { margin-top: 12px; }
+  }
+  @media print { body { background: #fff; } .page { box-shadow: none; margin: 0; } }

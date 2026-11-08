@@ -1,0 +1,46 @@
+# Hybrid replication lab - on-prem tier
+# sqlpub  = publisher + distributor
+# sqlsub1 = on-prem subscriber 1
+# sqlsub2 = on-prem subscriber 2
+# hostname is set explicitly so @@SERVERNAME matches the name replication uses.
+name: replab
+
+x-sql: &sql
+  image: mcr.microsoft.com/mssql/server:2022-latest
+  environment:
+    ACCEPT_EULA: "Y"
+    MSSQL_SA_PASSWORD: ${SA_PASSWORD}
+    MSSQL_PID: Developer
+    MSSQL_AGENT_ENABLED: "true"      # replication agents run as Agent jobs
+  networks: [replnet]
+  restart: unless-stopped
+
+services:
+  sqlpub:
+    <<: *sql
+    container_name: sqlpub
+    hostname: sqlpub
+    ports: ["14331:1433"]
+    volumes: [pubdata:/var/opt/mssql]
+
+  sqlsub1:
+    <<: *sql
+    container_name: sqlsub1
+    hostname: sqlsub1
+    ports: ["14332:1433"]
+    volumes: [sub1data:/var/opt/mssql]
+
+  sqlsub2:
+    <<: *sql
+    container_name: sqlsub2
+    hostname: sqlsub2
+    ports: ["14333:1433"]
+    volumes: [sub2data:/var/opt/mssql]
+
+networks:
+  replnet: {}
+
+volumes:
+  pubdata: {}
+  sub1data: {}
+  sub2data: {}

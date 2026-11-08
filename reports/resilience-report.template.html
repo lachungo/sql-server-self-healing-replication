@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replication Resilience Report</title>
+<style>
+/*__BASE_CSS__*/
+  td.res { white-space: nowrap; }
+  .vs { color: var(--text-muted); font-size: 12px; }
+  .bar { position: relative; height: 8px; background: var(--grid); border-radius: 4px; margin-top: 4px; min-width: 90px; }
+  .bar span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--series-1); }
+  .bar span.over { background: var(--critical); }
+  .bar i { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text-primary); }
+  @media (max-width: 560px) { th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) { display: none; } }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="head">
+    <div><h1>Replication Resilience Test Report</h1><div class="muted">ReplMon · faults injected on purpose, scored against targets</div></div>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="section">
+    <h2>1. Executive Summary</h2>
+    <div id="verdict"></div>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <section class="section">
+    <h2>2. Results Against Targets</h2>
+    <p>ReplMon's scheduled jobs did the detecting and repairing, with no human in the loop. Bars show the time taken; the black tick is the target. Times from injection.</p>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Run</th><th>Fault</th><th>Subscriber</th><th>Injected (UTC)</th><th>Time to detect</th><th>Time to recover</th><th>vs previous run</th><th>Result</th></tr></thead>
+      <tbody id="results"></tbody>
+    </table>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>3. Where the Time Went, Run by Run</h2>
+    <p>One bar per run, all on the same scale, from injection to verified recovery. Under each: what was broken, the incident ReplMon raised, and the rows it repaired.</p>
+    <div class="legend"><span><i class="ph-wait"></i>Waiting for detection</span><span><i class="ph-fix"></i>Detected → repaired</span><span><i class="ph-catch"></i>Repaired → verified recovery</span></div>
+    <div id="runs"></div>
+  </section>
+
+  <section class="section">
+    <h2>4. Test Guardrail</h2>
+    <div class="guard"><b>Chaos tests run in non-production, or in an agreed game-day window.</b>
+      <ul>
+        <li>Targets live in <code>ReplMon.dbo.ChaosTarget</code>; change them to match your SLOs, not to make a run pass.</li>
+        <li>A failed run stays recorded as Fail, so a regression is visible on the next report.</li>
+        <li>Rerun the full set after every cumulative update, schema change or new subscriber, and compare with the previous run.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="muted" id="foot"></footer>
+</main>
+<script>
+const DATA = /*__DATA__*/null;
+/*__COMMON_JS__*/
+
+const sec = v => v == null ? '—' : `${Number(v).toFixed(1)} s`;
+const median = a => { const s = a.filter(v => v != null).sort((x, y) => x - y); if (!s.length) return null;
+  const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+
+function score(r) {
+  if (r.result === 'Failed')  return { label: 'Fail', cls: 'fail' };
+  if (r.result === 'Running') return { label: 'Running', cls: '' };
+  const late = (r.detectTarget != null && r.detectSec > r.detectTarget) || (r.recoverTarget != null && r.recoverSec > r.recoverTarget);
+  return late ? { label: 'Pass, over target', cls: 'slow' } : { label: 'Pass', cls: 'pass' };
+}
+function bar(v, target) {
+  if (v == null) return '';
+  const max = Math.max(v, target ?? 0) * 1.1 || 1;
+  return `<div class="bar"><span class="${target != null && v > target ? 'over' : ''}" style="width:${(v / max * 100).toFixed(1)}%"></span>` +
+         (target != null ? `<i style="left:${(target / max * 100).toFixed(1)}%"></i>` : '') + '</div>';
+}
+function delta(now, prev) {
+  if (now == null || prev == null) return '';
+  const d = now - prev;
+  return `${d > 0 ? '+' : ''}${d.toFixed(1)} s`;
+}
+
+document.getElementById('meta').innerHTML = renderMeta([
+  ['Window (UTC)', `${esc(DATA.window.fromUtc)}<br>${esc(DATA.window.toUtc)}`],
+  ['Window (local)', `${esc(DATA.window.fromLocal)}<br>${esc(DATA.window.toLocal)}`],
+  ['Runs in window', String(DATA.runs.length)],
+  ['Generated', esc(DATA.built)],
+]);
+
+const scored = DATA.runs.map(r => ({ ...r, s: score(r) }));
+const passed = scored.filter(r => r.s.cls === 'pass').length;
+const failed = scored.filter(r => r.s.cls === 'fail').length;
+const over = scored.filter(r => r.s.cls === 'slow');
+document.getElementById('verdict').innerHTML = !scored.length ? '' :
+  failed ? banner('bad', `Failed: ${failed} of ${scored.length} runs`,
+                  `Not recovered: ${scored.filter(r => r.s.cls === 'fail').map(r => `${r.scenario} on ${r.sub}`).join(', ')}. Open those runs below.`)
+  : over.length ? banner('warn', `Recovered, ${over.length} over target`,
+                  `All ${scored.length} faults were repaired automatically; ${over.map(r => `${r.scenario} on ${r.sub}`).join(', ')} took longer than its target.`)
+  : banner('good', `Passed: ${scored.length} of ${scored.length} within target`,
+           `Every fault was detected, repaired and verified automatically, inside its target. Median detection ${sec(median(scored.map(r => r.detectSec)))}, median recovery ${sec(median(scored.map(r => r.recoverSec)))}.`);
+document.getElementById('tiles').innerHTML = [
+  ['Runs', String(scored.length), `${failed} failed`],
+  ['Within target', `${passed} / ${scored.length}`, 'detect and recover both within target'],
+  ['Median time to detect', sec(median(scored.map(r => r.detectSec))), 'MTTD, from injection'],
+  ['Median time to recover', sec(median(scored.map(r => r.recoverSec))), 'MTTR, verified recovery'],
+].map(([who, big, meta]) => `<div class="tile"><div class="who">${esc(who)}</div><div class="big">${esc(big)}</div><div class="meta">${esc(meta)}</div></div>`).join('');
+
+document.getElementById('results').innerHTML = scored.length ? scored.map(r => `
+  <tr><td>${r.id}</td><td>${esc(r.scenario)}</td><td>${esc(r.sub)}</td><td>${t(r.injected)}</td>
+  <td>${sec(r.detectSec)} <span class="vs">/ ${sec(r.detectTarget)}</span>${bar(r.detectSec, r.detectTarget)}</td>
+  <td>${sec(r.recoverSec)} <span class="vs">/ ${sec(r.recoverTarget)}</span>${bar(r.recoverSec, r.recoverTarget)}</td>
+  <td class="vs">${delta(r.detectSec, r.prevDetect) ? `detect ${delta(r.detectSec, r.prevDetect)}<br>recover ${delta(r.recoverSec, r.prevRecover)}` : 'first run'}</td>
+  <td class="res"><span class="kind ${r.s.cls}">${esc(r.s.label)}</span></td></tr>`).join('')
+  : '<tr><td colspan="8" class="empty">No chaos runs in this window. Run ./chaos/Invoke-ChaosTest.ps1 -Scenario All -TriggerDriftNow</td></tr>';
+
+const scale = Math.max(1, ...scored.map(r => r.recoverSec ?? r.detectTarget ?? 0));
+function phases(r) {
+  if (r.recoverSec == null) return `<div class="phase" title="Not recovered"><span style="width:100%;background:var(--critical);opacity:.35"></span></div>`;
+  const d = r.detectSec ?? 0, f = Math.max((r.repairSec ?? d) - d, 0), c = Math.max(r.recoverSec - (r.repairSec ?? d), 0);
+  const w = v => `${(v / scale * 100).toFixed(2)}%`;
+  return `<div class="phase" title="detect ${sec(d)} · repair ${sec(f)} · recover ${sec(c)}">` +
+         `<span class="ph-wait" style="width:${w(d)}"></span><span class="ph-fix" style="width:${w(f)}"></span><span class="ph-catch" style="width:${w(c)}"></span></div>`;
+}
+document.getElementById('runs').innerHTML = scored.length ? scored.map(r => {
+  const inc = DATA.incidents.filter(i => i.runId === r.id);
+  const rep = DATA.repairs.filter(x => x.runId === r.id);
+  const step = (label, v) => v == null ? '' : `<span>${label} <b>+${Number(v).toFixed(1)} s</b></span>`;
+  return `<details class="run"><summary>
+      <h3>Run #${r.id} · ${esc(r.scenario)} on ${esc(r.sub)} <span class="kind ${r.s.cls}">${esc(r.s.label)}</span>
+        <span class="vs">· recovered in ${sec(r.recoverSec)}</span> <span class="more">details</span></h3>
+      ${phases(r)}
+    </summary>
+    <div class="say">${esc(r.description ?? '')}</div>
+    <div class="timeline"><span>Injected <b>${t(r.injected)} UTC</b></span>${step('Detected', r.detectSec)}${step('Repaired', r.repairSec)}${step('Recovered', r.recoverSec)}</div>
+    <div class="err">${esc(r.notes ?? '')}</div>
+    ${inc.length ? `<div class="scroll"><table>
+      <thead><tr><th>#</th><th>Kind</th><th>Subscriber</th><th>Detected</th><th>Diagnosis</th><th>Action</th><th>Resolved</th></tr></thead>
+      <tbody>${renderIncidentRows(inc, '')}</tbody></table></div>` : '<div class="empty">No incident linked to this run.</div>'}
+    ${rep.length ? `<div style="margin-top:12px">${renderRepairs(rep, false)}</div>` : ''}
+  </details>`;
+}).join('') : '<div class="empty">Nothing to show.</div>';
+
+document.getElementById('foot').textContent = 'Source: ReplMon.dbo.ChaosRun, ChaosTarget, Incident and RepairLog. Report lineage is confined to the runs injected in this window.';
+applyExpand();
+</script>
+</body>
+</html>
